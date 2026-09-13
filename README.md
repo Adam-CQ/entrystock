@@ -1,0 +1,2 @@
+# entrystock
+Demo Stock App
