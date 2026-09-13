@@ -8,6 +8,8 @@
 - Prefer `uv run ...` when running Python tools.
 - Do not use `pip install` unless explicitly requested.
 - Do not modify `.env` or secrets.
+- Dependencies are added in `pyproject.toml`. Do not add one without
+  asking
 
 ## Working style
 
@@ -45,3 +47,8 @@
 - Keep changes focused on the requested task.
 - Do not modify unrelated files.
 - Before a large change, inspect the current Git diff/status.
+
+## Documents
+
+
+- `_docs/process.md` - how work is organized
