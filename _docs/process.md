@@ -206,6 +206,12 @@ and again after each round of QA fixes. A branch nobody can see is a
 branch nobody can review, and the whole wave's work is otherwise
 invisible until it merges.
 
+Every successful implementation must therefore be delivered visibly on
+GitHub: commit the focused changes after the relevant checks pass, push the
+commit to the remote branch, and record the implementation summary and test
+results on the issue. The issue is marked closed only after the pushed change
+has been integrated into `main`.
+
 Once the orchestrator rebases a branch, that branch's history no longer
 matches the one on origin, and every later push from it is a force push
 - which stops and waits for a human. So after a rebase the engineer
