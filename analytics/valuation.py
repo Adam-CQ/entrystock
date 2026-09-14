@@ -8,6 +8,7 @@ formulas.
 
 from dataclasses import dataclass, replace
 from math import isfinite
+from statistics import median
 from typing import Sequence
 
 
@@ -209,3 +210,121 @@ def calculate_dcf_sensitivity(
 
 DCFScenarioGrid = DCFSensitivityResult
 build_dcf_sensitivity = calculate_dcf_sensitivity
+
+
+@dataclass(frozen=True)
+class RelativeValuationObservation:
+    identifier: str
+    enterprise_value: float | None
+    market_capitalization: float | None
+    ebitda: float | None
+    earnings: float | None
+    revenue: float | None
+    free_cash_flow: float | None
+    currency: str
+    as_of: str
+    source: str = "unknown"
+
+
+@dataclass(frozen=True)
+class RelativeMultipleResult:
+    multiple: str
+    status: str
+    selected_value: float | None
+    peer_median: float | None
+    peer_values: tuple[float, ...]
+    included_peers: tuple[str, ...]
+    excluded_peers: tuple[tuple[str, str], ...]
+    outlier_peers: tuple[str, ...]
+    source_dates: tuple[str, ...]
+    coverage: int
+    explanation: str
+    units: str
+
+
+@dataclass(frozen=True)
+class RelativeValuationResult:
+    selected_company: str
+    peer_universe: tuple[str, ...]
+    multiples: tuple[RelativeMultipleResult, ...]
+    minimum_peers: int
+    as_of: str
+
+
+_RELATIVE_DEFINITIONS = {
+    "ev_ebitda": ("enterprise_value", "ebitda", "EV/EBITDA", "multiple"),
+    "pe": ("market_capitalization", "earnings", "P/E", "multiple"),
+    "ev_sales": ("enterprise_value", "revenue", "EV/Sales", "multiple"),
+    "fcf_yield": ("free_cash_flow", "market_capitalization", "FCF yield", "yield"),
+}
+
+
+def calculate_relative_valuation(
+    selected: RelativeValuationObservation,
+    peers: Sequence[RelativeValuationObservation],
+    *,
+    minimum_peers: int = 2,
+) -> RelativeValuationResult:
+    """Compare a selected company with its confirmed, point-in-time peers."""
+
+    if minimum_peers < 1:
+        raise ValueError("minimum_peers must be positive")
+    unique_peers: dict[str, RelativeValuationObservation] = {}
+    for peer in peers:
+        if peer.identifier != selected.identifier:
+            unique_peers.setdefault(peer.identifier, peer)
+    universe = tuple(unique_peers)
+    results = tuple(_relative_multiple(name, selected, tuple(unique_peers.values()), minimum_peers) for name in _RELATIVE_DEFINITIONS)
+    return RelativeValuationResult(selected.identifier, universe, results, minimum_peers, selected.as_of)
+
+
+def _relative_multiple(name: str, selected: RelativeValuationObservation, peers: Sequence[RelativeValuationObservation], minimum_peers: int) -> RelativeMultipleResult:
+    numerator_name, denominator_name, label, units = _RELATIVE_DEFINITIONS[name]
+    selected_numerator = getattr(selected, numerator_name)
+    selected_denominator = getattr(selected, denominator_name)
+    source_dates = tuple(dict.fromkeys([selected.as_of, *(peer.as_of for peer in peers)]))
+    if selected.currency == "":
+        return RelativeMultipleResult(name, "not_evaluable", None, None, (), (), tuple((peer.identifier, "missing currency") for peer in peers), (), source_dates, 0, "selected currency is missing", units)
+    if not _valid_ratio_inputs(selected_numerator, selected_denominator):
+        reason = "suppressed: selected company has a non-positive or missing denominator"
+        return RelativeMultipleResult(name, "suppressed", None, None, (), (), tuple((peer.identifier, reason) for peer in peers), (), source_dates, 0, reason, units)
+    selected_value = float(selected_numerator) / float(selected_denominator)
+    values: list[tuple[str, float, str]] = []
+    excluded: list[tuple[str, str]] = []
+    for peer in peers:
+        if peer.currency != selected.currency:
+            excluded.append((peer.identifier, "incompatible currency"))
+        elif not _valid_ratio_inputs(getattr(peer, numerator_name), getattr(peer, denominator_name)):
+            excluded.append((peer.identifier, "missing or non-positive denominator"))
+        else:
+            values.append((peer.identifier, float(getattr(peer, numerator_name)) / float(getattr(peer, denominator_name)), peer.as_of))
+    if len(values) < minimum_peers:
+        return RelativeMultipleResult(name, "not_evaluable", selected_value, None, tuple(value for _, value, _ in values), tuple(identifier for identifier, _, _ in values), tuple(excluded), (), source_dates, len(values), f"insufficient peer data: {len(values)} valid peer(s), minimum is {minimum_peers}", units)
+    outliers = _iqr_outliers(values)
+    usable = [item for item in values if item[0] not in outliers]
+    peer_median = median(item[1] for item in usable)
+    return RelativeMultipleResult(name, "selected", selected_value, peer_median, tuple(value for _, value, _ in values), tuple(identifier for identifier, _, _ in values), tuple(excluded), tuple(sorted(outliers)), source_dates, len(values), f"selected because the required {denominator_name} is positive and available", units)
+
+
+def _valid_ratio_inputs(numerator: object, denominator: object) -> bool:
+    return _finite(numerator) and _finite(denominator) and float(numerator) >= 0 and float(denominator) > 0
+
+
+def _iqr_outliers(values: Sequence[tuple[str, float, str]]) -> set[str]:
+    if len(values) < 4:
+        return set()
+    ordered = sorted(item[1] for item in values)
+    lower_half = ordered[: len(ordered) // 2]
+    upper_half = ordered[(len(ordered) + 1) // 2 :]
+    q1, q3 = median(lower_half), median(upper_half)
+    fence = 1.5 * (q3 - q1)
+    baseline = median(ordered)
+    return {
+        identifier
+        for identifier, value, _ in values
+        if value < q1 - fence or value > q3 + fence or value > baseline * 3 or value < baseline / 3
+    }
+
+
+RelativeValuation = RelativeValuationResult
+build_relative_valuation = calculate_relative_valuation
