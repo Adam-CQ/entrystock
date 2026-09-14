@@ -19,6 +19,9 @@ def test_dashboard_renders_complete_fixture_analysis_workflow():
         assert label in body
     assert "Fixture Energy" in body
     assert len(response.context["peers"]) == 5
+    assert "Data freshness & quality" in body
+    assert {item.source for item in response.context["data_quality_reports"]} == {"prices", "fundamentals", "forecasts", "classifications"}
+    assert response.context["data_quality_summary"].overall_status == "not_evaluable"
 
 
 def test_dashboard_company_selector_changes_selected_company():

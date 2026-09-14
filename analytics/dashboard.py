@@ -3,6 +3,7 @@
 from datetime import date
 
 from analytics.forecasts import ForecastValue, compare_forecasts
+from analytics.data_quality import QualityThreshold, assess_source, summarize_quality
 from analytics.hard_rules import evaluate_hard_rules, price_not_more_than_fair_value_rule
 from analytics.momentum import PriceObservation as MomentumPrice, calculate_momentum
 from analytics.recommendations import Evidence, RecommendationInput, build_recommendation
@@ -29,6 +30,18 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
     selected_statement = _latest_statement(company)
     selected = _observation(company, selected_statement, as_of)
     peer_observations = tuple(_observation(peer, _latest_statement(peer), as_of) for peer in peers)
+    current_price = _current_price(company, price_observations)
+    forecast_values = _forecast_values(company, as_of)
+    quality_reports = _quality_reports(company, selected_statement, price_observations, forecast_values, peers, as_of)
+    quality_summary = summarize_quality(quality_reports)
+    quality_by_source = {report.source: report for report in quality_reports}
+    quality_limitations = tuple(quality_summary.warnings + quality_summary.blocking_reasons)
+    if quality_by_source["fundamentals"].status == "blocked":
+        selected = _observation(company, None, as_of)
+        peer_observations = tuple(_observation(peer, None, as_of) for peer in peers)
+    if quality_by_source["forecasts"].status == "blocked":
+        forecast_values = ()
+    forecasts = compare_forecasts(forecast_values, as_of=as_of)
 
     dcf_inputs = DCFInputs(
         forecast_years=5, revenue_growth=0.10, operating_margin=0.08,
@@ -41,7 +54,6 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
     fair_value = dcf.per_share_value
     fair_low = fair_value * 0.85 if fair_value is not None else None
     fair_high = fair_value * 1.15 if fair_value is not None else None
-    current_price = _current_price(company, price_observations)
 
     score = calculate_composite_score({
         "valuation": _bounded((fair_high / current_price) if fair_high and current_price else None),
@@ -64,14 +76,12 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
         negative_drivers=(Evidence("forecast coverage", "1 of 3 sources", "fixture provider", as_of.isoformat()),),
         catalysts=(Evidence("nuclear energy exposure", "present", "fixture classification", as_of.isoformat()),),
         risks=(Evidence("limited price history", "1 observation", "fixture market data", as_of.isoformat()),),
-        data_quality_limitations=("management and consensus forecasts are unavailable in the fixture", "price history has one observation"),
+        data_quality_limitations=("management and consensus forecasts are unavailable in the fixture", "price history has one observation", *quality_limitations),
         uncertainty=("forecast-source divergence cannot yet be measured",), source="fixture", as_of=as_of.isoformat(),
     ))
 
-    forecast_values = _forecast_values(company, as_of)
-    forecasts = compare_forecasts(forecast_values, as_of=as_of)
     selected_identifier = company.securities.first().security_identifier
-    prices = tuple(MomentumPrice(selected_identifier, item.trading_date, float(item.adjusted_close or item.close), float(item.volume) if item.volume is not None else None) for item in price_observations)
+    prices = () if quality_by_source["prices"].status == "blocked" else tuple(MomentumPrice(selected_identifier, item.trading_date, float(item.adjusted_close or item.close), float(item.volume) if item.volume is not None else None) for item in price_observations)
     momentum = calculate_momentum(selected_identifier, prices, peer_entities=tuple(peer.securities.first().security_identifier for peer in peers), as_of=as_of)
     relative = calculate_relative_valuation(selected, peer_observations)
     historical = calculate_historical_valuation(selected, tuple(_observation(company, statement, as_of) for statement in company.incomestatement_set.order_by("reporting_period__period_end")))
@@ -84,6 +94,7 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
         "historical_valuation": historical, "forecasts": forecasts, "momentum": momentum,
         "current_price": current_price, "assumptions": dcf_inputs,
         "chart_payloads": charts,
+        "data_quality_reports": quality_reports, "data_quality_summary": quality_summary,
     }
 
 
@@ -112,6 +123,20 @@ def _forecast_values(company, as_of):
     if forecast:
         return (ForecastValue("management", forecast.measure.code, forecast.period.label, float(forecast.value) if forecast.value is not None else None, forecast.units, forecast.retrieved_at, forecast.effective_date),)
     return ()
+
+
+def _quality_reports(company, statement, price_observations, forecast_values, peers, as_of):
+    latest_price = max(price_observations, key=lambda item: item.trading_date, default=None)
+    price_missing = () if latest_price and latest_price.adjusted_close is not None else ("adjusted_close",)
+    reports = [assess_source("prices", analysis_date=as_of, retrieved_at=latest_price.retrieved_at if latest_price else None, effective_date=latest_price.trading_date if latest_price else None, coverage=len(price_observations), missing_fields=price_missing)]
+    required = ("revenue", "operating_income", "net_income")
+    missing = tuple(name for name in required if statement is None or getattr(statement, name) is None)
+    reports.append(assess_source("fundamentals", analysis_date=as_of, retrieved_at=statement.retrieved_at if statement else None, effective_date=statement.effective_date if statement else None, coverage=1 if statement else 0, missing_fields=missing))
+    latest_forecast = max(forecast_values, key=lambda item: item.effective_date or date.min, default=None)
+    missing_sources = tuple(source for source in ("management", "consensus", "internal") if not any(item.source == source for item in forecast_values))
+    reports.append(assess_source("forecasts", analysis_date=as_of, retrieved_at=latest_forecast.retrieved_at if latest_forecast else None, effective_date=latest_forecast.effective_date if latest_forecast else None, coverage=len({item.source for item in forecast_values}), expected_coverage=3, missing_fields=missing_sources))
+    reports.append(assess_source("classifications", analysis_date=as_of, retrieved_at=None, effective_date=None, coverage=0, missing_fields=("retrieved_at", "effective_date")))
+    return tuple(reports)
 
 
 def _bounded(value):
