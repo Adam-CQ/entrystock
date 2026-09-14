@@ -18,3 +18,17 @@ provider-contract units and `fixture-backtest` provenance.
 This is a small PoC fixture, not a production historical database. It does not
 represent a tradable universe, survivorship-bias correction, corporate-action
 research, or evidence of predictive performance.
+
+## Minimum recommendation backtest
+
+`analytics.backtesting.run_recommendation_backtest(dataset)` runs the scoring
+and recommendation engines against each requested point-in-time snapshot. It
+reports forward adjusted-close returns, an optional benchmark comparison,
+entry hit rate, compounded return, maximum drawdown, a Sharpe-like descriptive
+ratio, component-conditioned results, and sensitivity to weight presets and
+lookback windows. Signal inputs are restricted to records visible at the
+analysis date; future prices are used only to measure outcomes.
+
+The output is deliberately labeled as a small fixture-based PoC. It is not a
+tradable-universe study and must not be used to make predictive or investment
+claims.
