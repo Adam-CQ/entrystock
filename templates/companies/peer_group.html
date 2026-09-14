@@ -1,0 +1,10 @@
+<!doctype html>
+<title>Peer group for {{ company.common_name }}</title>
+<h1>Peer group for {{ company.common_name }}</h1>
+<p>{{ proposal.explanation }}</p>
+<form method="post">
+  {% csrf_token %}
+  {{ form.selected_peers }}
+  {{ form.confirm }} Confirm
+  <button type="submit">Save peer group</button>
+</form>

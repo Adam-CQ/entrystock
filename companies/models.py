@@ -105,3 +105,44 @@ class TickerIdentifier(models.Model):
 
     def __str__(self) -> str:
         return f"{self.symbol}:{self.exchange.code}"
+
+
+class PeerGroupProposal(models.Model):
+    class Status(models.TextChoices):
+        PROPOSED = "proposed", "Proposed"
+        CONFIRMED = "confirmed", "Confirmed"
+
+    company = models.OneToOneField(Company, on_delete=models.PROTECT, related_name="peer_group_proposal")
+    source = models.CharField(max_length=120, default="fixture")
+    generated_at = models.DateTimeField(auto_now=True)
+    minimum_candidates = models.PositiveSmallIntegerField(default=5)
+    eligible_count = models.PositiveIntegerField(default=0)
+    sufficient_universe = models.BooleanField(default=False)
+    explanation = models.TextField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PROPOSED)
+
+    class Meta:
+        ordering = ["company__common_name"]
+
+
+class PeerGroupMember(models.Model):
+    class Origin(models.TextChoices):
+        ALGORITHM = "algorithm", "Algorithmic proposal"
+        USER_ADDED = "user_added", "User added"
+        USER_REMOVED = "user_removed", "User removed"
+
+    proposal = models.ForeignKey(PeerGroupProposal, on_delete=models.CASCADE, related_name="members")
+    peer = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="peer_group_memberships")
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    score = models.FloatField(default=0)
+    confidence = models.FloatField(default=0)
+    reasons = models.JSONField(default=list)
+    component_scores = models.JSONField(default=dict)
+    selected = models.BooleanField(default=True)
+    origin = models.CharField(max_length=16, choices=Origin.choices, default=Origin.ALGORITHM)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["proposal", "peer"], name="unique_peer_group_member"),
+        ]
+        ordering = ["rank", "peer__common_name", "id"]
