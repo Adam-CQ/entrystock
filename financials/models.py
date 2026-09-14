@@ -4,6 +4,53 @@ from django.db import models
 from companies.models import Company, Security
 
 
+class ForecastPeriod(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="forecast_periods")
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name="forecast_periods", null=True, blank=True)
+    period_start = models.DateField()
+    period_end = models.DateField()
+    label = models.CharField(max_length=32)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "security", "period_start", "period_end"], name="unique_forecast_period"),
+            models.CheckConstraint(condition=models.Q(period_start__lte=models.F("period_end")), name="forecast_period_start_before_end"),
+        ]
+        ordering = ["period_end", "id"]
+
+
+class ForecastMeasure(models.Model):
+    code = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=120)
+    default_units = models.CharField(max_length=32)
+
+    class Meta:
+        ordering = ["code"]
+
+
+class CompanyForecast(models.Model):
+    class Source(models.TextChoices):
+        MANAGEMENT = "management", "Management guidance"
+        CONSENSUS = "consensus", "Analyst consensus"
+        INTERNAL = "internal", "Internal model"
+
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="forecasts")
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name="forecasts", null=True, blank=True)
+    measure = models.ForeignKey(ForecastMeasure, on_delete=models.PROTECT, related_name="forecasts")
+    period = models.ForeignKey(ForecastPeriod, on_delete=models.PROTECT, related_name="forecasts")
+    source = models.CharField(max_length=16, choices=Source.choices)
+    value = models.DecimalField(max_digits=28, decimal_places=8, null=True, blank=True)
+    units = models.CharField(max_length=32)
+    retrieved_at = models.DateTimeField(null=True, blank=True)
+    effective_date = models.DateField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "security", "measure", "period", "source", "effective_date"], name="unique_company_forecast_snapshot"),
+        ]
+        ordering = ["period__period_end", "measure__code", "source"]
+
+
 class ReportingPeriod(models.Model):
     class PeriodType(models.TextChoices):
         ANNUAL = "annual", "Annual"
