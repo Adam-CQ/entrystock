@@ -15,6 +15,7 @@ from analytics.valuation import (
     calculate_historical_valuation,
     calculate_relative_valuation,
 )
+from analytics.visualizations import build_chart_payloads
 
 
 def build_dashboard_context(company, proposal, peers, price_observations=()):
@@ -74,6 +75,7 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
     momentum = calculate_momentum(selected_identifier, prices, peer_entities=tuple(peer.securities.first().security_identifier for peer in peers), as_of=as_of)
     relative = calculate_relative_valuation(selected, peer_observations)
     historical = calculate_historical_valuation(selected, tuple(_observation(company, statement, as_of) for statement in company.incomestatement_set.order_by("reporting_period__period_end")))
+    charts = build_chart_payloads(sensitivity=sensitivity, historical=historical, relative=relative, forecasts=forecasts, momentum=momentum, as_of=as_of.isoformat())
 
     return {
         "as_of": as_of, "selected_company": company, "proposal": proposal,
@@ -81,6 +83,7 @@ def build_dashboard_context(company, proposal, peers, price_observations=()):
         "dcf": dcf, "sensitivity": sensitivity, "relative_valuation": relative,
         "historical_valuation": historical, "forecasts": forecasts, "momentum": momentum,
         "current_price": current_price, "assumptions": dcf_inputs,
+        "chart_payloads": charts,
     }
 
 

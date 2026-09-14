@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EntryStock recommendation dashboard</title>
   <script src="https://unpkg.com/htmx.org@2.0.7"></script>
+  <script src="{{ PLOTLY_JS_URL|default:'https://cdn.plot.ly/plotly-2.35.2.min.js' }}"></script>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; background:#f5f7fb; color:#172033; }
     body { max-width:1200px; margin:0 auto; padding:2rem 1rem; } header { display:flex; justify-content:space-between; align-items:end; gap:1rem; }
@@ -15,6 +16,7 @@
     .pill { background:#eef3ff; border-radius:99px; padding:.2rem .55rem; font-size:.8rem; } .warning { background:#fff7e6; border-color:#f3c66b; }
     a,button { color:#1d4ed8; } button { border:0; border-radius:7px; padding:.55rem .8rem; background:#2563eb; color:white; cursor:pointer; }
     select { padding:.5rem; min-width:260px; }
+    .chart-grid { align-items:stretch; } .chart-card { min-width:0; } .chart { min-height:300px; } .chart-fallback { font-weight:650; color:#8a4b08; }
   </style>
 </head>
 <body>
@@ -34,9 +36,24 @@
   </section>
   <section class="card"><h2>2. Proposed peer group</h2><p>{{ proposal.explanation }}</p><p><a href="{% url 'peer-group' selected_company.pk %}">Review, add, remove, or confirm peers</a> · status: <span class="pill">{{ proposal.get_status_display }}</span></p><table><tr><th>Peer</th><th>Similarity</th><th>Why selected</th></tr>{% for member in proposal.members.all %}{% if member.selected %}<tr><td>{{ member.peer.common_name }}</td><td>{{ member.score|floatformat:2 }}</td><td>{{ member.reasons|join:", " }}</td></tr>{% endif %}{% endfor %}</table></section>
   <section class="grid"><article class="card"><h2>3. DCF assumptions</h2><table>{% for label,value in dcf_assumptions %}<tr><td>{{ label }}</td><td>{{ value }}</td></tr>{% endfor %}</table><p class="muted">Source period: {{ assumptions.source_period }} · rates are decimal fractions.</p></article><article class="card"><h2>DCF sensitivity</h2><table><tr><th>Discount / terminal growth</th>{% for rate in sensitivity.terminal_growths %}<th>{{ rate|floatformat:0 }}%</th>{% endfor %}</tr>{% for rate in sensitivity.discount_rates %}<tr><th>{{ rate|floatformat:0 }}%</th>{% for growth in sensitivity.terminal_growths %}{% with cell=sensitivity.cells|first %}<td>{% for candidate in sensitivity.cells %}{% if candidate.discount_rate == rate and candidate.terminal_growth == growth %}{% if candidate.per_share_value %}${{ candidate.per_share_value|floatformat:2 }}{% else %}—{% endif %}{% endif %}{% endfor %}</td>{% endwith %}{% endfor %}</tr>{% endfor %}</table><p class="muted">Currency/share · base case {{ sensitivity.base_case.0|floatformat:0 }}% / {{ sensitivity.base_case.1|floatformat:0 }}%.</p></article></section>
+  <section class="grid chart-grid"><article class="card chart-card"><div id="chart-dcf-sensitivity" class="chart" aria-label="DCF sensitivity chart"></div></article><article class="card chart-card"><div id="chart-historical-valuation" class="chart" aria-label="Historical valuation chart"></div></article><article class="card chart-card"><div id="chart-peer-multiples" class="chart" aria-label="Peer multiples chart"></div></article><article class="card chart-card"><div id="chart-forecast-divergence" class="chart" aria-label="Forecast divergence chart"></div></article><article class="card chart-card"><div id="chart-company-peer-momentum" class="chart" aria-label="Company and peer momentum chart"></div></article></section>
   <section class="grid"><article class="card"><h2>4. Peer valuation & ranking</h2><table><tr><th>Multiple</th><th>Selected</th><th>Peer median</th><th>Coverage</th></tr>{% for item in relative_valuation.multiples %}<tr><td>{{ item.multiple }}</td><td>{% if item.selected_value %}{{ item.selected_value|floatformat:2 }}{% else %}—{% endif %}</td><td>{% if item.peer_median %}{{ item.peer_median|floatformat:2 }}{% else %}—{% endif %}</td><td>{{ item.coverage }}</td></tr>{% endfor %}</table></article><article class="card"><h2>5. Historical valuation</h2><table><tr><th>Multiple</th><th>Current</th><th>Median</th><th>Status</th></tr>{% for item in historical_valuation.multiples %}<tr><td>{{ item.multiple }}</td><td>{% if item.current_value %}{{ item.current_value|floatformat:2 }}{% else %}—{% endif %}</td><td>{% if item.historical_median %}{{ item.historical_median|floatformat:2 }}{% else %}—{% endif %}</td><td>{{ item.status }}</td></tr>{% endfor %}</table></article></section>
   <section class="grid"><article class="card"><h2>6. Forecast comparison</h2><table><tr><th>Measure / period</th><th>Management</th><th>Consensus</th><th>Internal</th><th>State</th></tr>{% for item in forecasts %}<tr><td>{{ item.measure }} / {{ item.period }}</td>{% for source in forecast_sources %}<td>{% for key,value in item.source_values.items %}{% if key == source %}{% if value %}{{ value.value|floatformat:0 }} {{ value.units }}{% else %}—{% endif %}{% endif %}{% endfor %}</td>{% endfor %}<td>{% if item.comparable %}Comparable{% else %}{{ item.reason|default:"Not comparable" }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">No forecast records are available.</td></tr>{% endfor %}</table></article><article class="card"><h2>7. Momentum</h2><p>{{ momentum.probabilistic_notice }}</p><p>Company observations: {{ momentum.selected.observation_count }}</p>{% for signal in momentum.selected.signals %}<p>{{ signal.identifier }}: {% if signal.value is not None %}{{ signal.value|floatformat:2 }}{% else %}Not evaluable{% endif %} <span class="muted">({{ signal.explanation }})</span></p>{% endfor %}</article></section>
   <section class="card"><h2>8. Composite score breakdown</h2><p>Version {{ score.configuration_version }} · coverage {{ score.coverage|floatformat:0 }}% · {{ score.explanation }}</p><table><tr><th>Component</th><th>Weight</th><th>Value</th><th>Contribution</th><th>State</th></tr>{% for item in score.contributions %}<tr><td>{{ item.component }}</td><td>{{ item.weight|floatformat:0 }}%</td><td>{% if item.value is not None %}{{ item.value|floatformat:2 }}{% else %}—{% endif %}</td><td>{{ item.contribution|floatformat:3 }}</td><td>{{ item.status }}</td></tr>{% endfor %}</table></section>
   <section class="grid"><article class="card"><h2>Drivers, catalysts & risks</h2><p><strong>Positive:</strong> {% for item in recommendation.positive_drivers %}{{ item.name }} ({{ item.value }}){% if not forloop.last %}; {% endif %}{% endfor %}</p><p><strong>Catalyst:</strong> {% for item in recommendation.catalysts %}{{ item.name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p><p><strong>Risk:</strong> {% for item in recommendation.risks %}{{ item.name }}{% if not forloop.last %}; {% endif %}{% endfor %}</p></article><article class="card warning"><h2>Data quality & uncertainty</h2>{% for item in recommendation.data_quality_limitations %}<p>⚠ {{ item }}</p>{% endfor %}{% for item in recommendation.uncertainty %}<p>⚠ {{ item }}</p>{% endfor %}</article></section>
   {% endif %}
+  {% if selected_company %}{{ chart_payloads|json_script:"chart-payloads" }}<script>
+    (function () {
+      const charts = JSON.parse(document.getElementById("chart-payloads").textContent);
+      charts.forEach(function (chart) {
+        const target = document.getElementById("chart-" + chart.id);
+        if (!target) return;
+        if (chart.state !== "ok" || !window.Plotly) {
+          target.innerHTML = '<p class="chart-fallback">' + (chart.message || "Chart unavailable.") + '</p><p class="muted">Source: ' + chart.source + ' · as of ' + chart.as_of + ' · units: ' + chart.units + '</p>';
+          return;
+        }
+        window.Plotly.newPlot(target, chart.figure.data, chart.figure.layout, {responsive: true, displaylogo: false});
+      });
+    }());
+  </script>{% endif %}
 </body></html>

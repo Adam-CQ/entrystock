@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.conf import settings
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -14,7 +15,7 @@ def dashboard(request):
     companies = Company.objects.filter(is_active=True).select_related("sector", "industry")
     selected_id = request.GET.get("company")
     company = get_object_or_404(companies, pk=selected_id) if selected_id else companies.first()
-    context = {"companies": companies, "selected_company": company}
+    context = {"companies": companies, "selected_company": company, "PLOTLY_JS_URL": settings.PLOTLY_JS_URL}
     if company:
         proposal = _get_or_create_proposal(company)
         peers = tuple(member.peer for member in proposal.members.filter(selected=True).select_related("peer"))

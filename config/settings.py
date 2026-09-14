@@ -60,6 +60,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Pinned browser charting asset; chart payloads are generated server-side.
+PLOTLY_JS_URL = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 
