@@ -328,3 +328,91 @@ def _iqr_outliers(values: Sequence[tuple[str, float, str]]) -> set[str]:
 
 RelativeValuation = RelativeValuationResult
 build_relative_valuation = calculate_relative_valuation
+
+
+HistoricalValuationObservation = RelativeValuationObservation
+
+
+@dataclass(frozen=True)
+class HistoricalMultipleResult:
+    multiple: str
+    current_value: float | None
+    historical_median: float | None
+    current_percentile: float | None
+    historical_values: tuple[float, ...]
+    valid_periods: tuple[str, ...]
+    excluded_periods: tuple[tuple[str, str], ...]
+    band: tuple[float, float] | None
+    status: str
+    units: str
+    source_coverage: int
+    explanation: str
+
+
+@dataclass(frozen=True)
+class HistoricalValuationResult:
+    selected_company: str
+    current_observation_date: str
+    periods: tuple[str, ...]
+    multiples: tuple[HistoricalMultipleResult, ...]
+    minimum_periods_for_band: int
+
+
+def calculate_historical_valuation(
+    current: HistoricalValuationObservation,
+    history: Sequence[HistoricalValuationObservation],
+    *,
+    minimum_periods_for_band: int = 3,
+) -> HistoricalValuationResult:
+    """Compare current multiples with valid point-in-time company history."""
+
+    if minimum_periods_for_band < 1:
+        raise ValueError("minimum_periods_for_band must be positive")
+    unique: dict[str, HistoricalValuationObservation] = {}
+    for observation in history:
+        unique.setdefault(observation.as_of, observation)
+    observations = tuple(unique.values())
+    results = tuple(_historical_multiple(name, current, observations, minimum_periods_for_band) for name in _RELATIVE_DEFINITIONS)
+    return HistoricalValuationResult(current.identifier, current.as_of, tuple(unique), results, minimum_periods_for_band)
+
+
+def _historical_multiple(name: str, current: HistoricalValuationObservation, history: Sequence[HistoricalValuationObservation], minimum_periods: int) -> HistoricalMultipleResult:
+    numerator_name, denominator_name, _, units = _RELATIVE_DEFINITIONS[name]
+    current_numerator = getattr(current, numerator_name)
+    current_denominator = getattr(current, denominator_name)
+    current_value = float(current_numerator) / float(current_denominator) if _valid_ratio_inputs(current_numerator, current_denominator) else None
+    valid: list[tuple[str, float]] = []
+    excluded: list[tuple[str, str]] = []
+    for observation in history:
+        if observation.currency != current.currency:
+            excluded.append((observation.as_of, "incompatible currency"))
+        elif observation.identifier != current.identifier:
+            excluded.append((observation.as_of, "different company"))
+        elif not _valid_ratio_inputs(getattr(observation, numerator_name), getattr(observation, denominator_name)):
+            excluded.append((observation.as_of, "missing or non-positive denominator"))
+        else:
+            valid.append((observation.as_of, float(getattr(observation, numerator_name)) / float(getattr(observation, denominator_name))))
+    if not valid:
+        status = "not_evaluable" if current_value is None else "insufficient_data"
+        reason = "no valid historical periods" if not valid else "current value is not evaluable"
+        return HistoricalMultipleResult(name, current_value, None, None, (), (), tuple(excluded), None, status, units, 0, reason)
+    ordered = sorted(value for _, value in valid)
+    percentile = None if current_value is None else _percentile_rank(current_value, ordered)
+    band = (ordered[0], ordered[-1]) if len(ordered) >= minimum_periods else None
+    status = "selected" if current_value is not None else "not_evaluable"
+    explanation = "current value compared with valid point-in-time history"
+    if band is None:
+        explanation += f"; band withheld below minimum of {minimum_periods} periods"
+    return HistoricalMultipleResult(name, current_value, median(ordered), percentile, tuple(value for _, value in valid), tuple(period for period, _ in valid), tuple(excluded), band, status, units, len(valid), explanation)
+
+
+def _percentile_rank(value: float, ordered: Sequence[float]) -> float:
+    if len(ordered) == 1:
+        return 1.0 if value >= ordered[0] else 0.0
+    below = sum(item < value for item in ordered)
+    equal = sum(item == value for item in ordered)
+    return (below + 0.5 * equal) / len(ordered)
+
+
+HistoricalValuation = HistoricalValuationResult
+build_historical_valuation = calculate_historical_valuation
