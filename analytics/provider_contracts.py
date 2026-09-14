@@ -17,6 +17,13 @@ class CompanyMetadata:
     security_identifiers: tuple[str, ...]
     source: str
     retrieved_at: datetime
+    business_model: str | None = None
+    industry: str | None = None
+    size: Decimal | None = None
+    growth: Decimal | None = None
+    profitability: Decimal | None = None
+    capital_intensity: Decimal | None = None
+    themes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
