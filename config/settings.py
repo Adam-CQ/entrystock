@@ -11,6 +11,8 @@ ALLOWED_HOSTS = [host for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").sp
 
 INSTALLED_APPS = [
     "companies",
+    "financials",
+    "market_data",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

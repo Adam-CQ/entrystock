@@ -2,6 +2,12 @@
 
 - Tasks are GitHub issues, handled one issue at a time
 - Commit regularly
+- A GitHub-linked task is not complete at the local-code stage. After tests
+  pass, commit and push the implementation, comment on the issue with the
+  commit and verification results, and close the issue after the commit is
+  integrated into `main`.
+- For a sequence of linked issues, perform that handoff for each issue in
+  order before starting the next one.
 
 Project documents
 

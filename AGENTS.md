@@ -47,6 +47,12 @@
 - Keep changes focused on the requested task.
 - Do not modify unrelated files.
 - Before a large change, inspect the current Git diff/status.
+- When a task is linked to a GitHub issue, completion includes the GitHub
+  handoff: after the relevant tests pass, commit and push the implementation,
+  add a concise issue comment with the commit and verification results, and
+  close the issue only after the commit is integrated into `main`.
+- If several linked issues are requested, complete and verify them in issue
+  order and update each issue before moving to the next one.
 
 ## Documents
 
