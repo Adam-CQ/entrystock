@@ -201,3 +201,71 @@ def _last_date(observations: Sequence[PriceObservation]) -> date | None:
 
 MomentumAnalysis = MomentumResult
 build_momentum = calculate_momentum
+
+
+@dataclass(frozen=True)
+class PeerLeadershipResult:
+    window: int
+    leaders: tuple[str, ...]
+    laggards: tuple[str, ...]
+    ties: tuple[str, ...]
+    signal_values: tuple[tuple[str, float], ...]
+    included_peers: tuple[str, ...]
+    excluded_peers: tuple[tuple[str, str], ...]
+    lead_lag_value: float | None
+    lead_lag_status: str
+    lead_lag_explanation: str
+    probabilistic_notice: str = "Peer-leadership signals are probabilistic indicators, not predictive guarantees."
+
+
+def analyze_peer_leadership(
+    momentum: MomentumResult,
+    *,
+    window: int = 21,
+    minimum_peers: int = 3,
+) -> PeerLeadershipResult:
+    """Identify peer leaders/laggards from a point-in-time momentum snapshot.
+
+    The lead-lag feature is a cautious cross-sectional spread: peer median
+    return minus selected-company return. It is withheld unless the minimum
+    number of peers has evaluable data.
+    """
+
+    if window < 1 or minimum_peers < 1:
+        raise ValueError("window and minimum_peers must be positive")
+    identifier = f"return_{window}d"
+    values: list[tuple[str, float]] = []
+    excluded: list[tuple[str, str]] = []
+    for peer in momentum.peers:
+        signal = next((item for item in peer.signals if item.identifier == identifier), None)
+        if signal is None:
+            excluded.append((peer.entity_id, "momentum window is not configured"))
+        elif signal.value is None:
+            excluded.append((peer.entity_id, "missing or insufficient momentum history"))
+        elif signal.end_date is None or signal.end_date > momentum.as_of:
+            excluded.append((peer.entity_id, "observation is after analysis date"))
+        else:
+            values.append((peer.entity_id, signal.value))
+    values.sort(key=lambda item: (-item[1], item[0]))
+    included = tuple(identifier for identifier, _ in values)
+    if not values:
+        return PeerLeadershipResult(window, (), (), (), (), (), tuple(excluded), None, "not_evaluable", "no peers have evaluable point-in-time momentum data")
+    highest, lowest = values[0][1], values[-1][1]
+    leaders = tuple(identifier for identifier, value in values if value == highest)
+    laggards = tuple(identifier for identifier, value in values if value == lowest)
+    ties = tuple(identifier for identifier, value in values if sum(item_value == value for _, item_value in values) > 1)
+    selected_signal = next((item for item in momentum.selected.signals if item.identifier == identifier), None)
+    if len(values) < minimum_peers or selected_signal is None or selected_signal.value is None:
+        lead_lag_value = None
+        lead_lag_status = "insufficient_data"
+        lead_lag_explanation = f"lead-lag feature requires {minimum_peers} peers and an evaluable selected-company return"
+    else:
+        lead_lag_value = median(value for _, value in values) - selected_signal.value
+        lead_lag_status = "ok"
+        lead_lag_explanation = "peer median return minus selected-company return at the same point-in-time window"
+    return PeerLeadershipResult(window, leaders, laggards, ties, tuple(values), included, tuple(excluded), lead_lag_value, lead_lag_status, lead_lag_explanation)
+
+
+PeerLeaderLaggardAnalysis = PeerLeadershipResult
+build_peer_leadership = analyze_peer_leadership
+identify_peer_leaders_and_laggards = analyze_peer_leadership
