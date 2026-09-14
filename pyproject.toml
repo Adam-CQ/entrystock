@@ -5,6 +5,7 @@ description = "Explainable investor analysis workflow"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "celery[redis]==5.6.3",
     "Django==6.1.1",
     "fastapi==0.141.1",
 ]

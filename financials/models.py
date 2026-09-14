@@ -167,3 +167,47 @@ class CashFlowStatement(StatementBase):
                 name="unique_cash_flow_statement_snapshot",
             ),
         ]
+
+
+class AnalysisRun(models.Model):
+    """Immutable input snapshot and durable output of one analysis attempt."""
+
+    class Status(models.TextChoices):
+        CREATED = "created", "Created"
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        PARTIALLY_EVALUABLE = "partially_evaluable", "Partially evaluable"
+        FAILED = "failed", "Failed"
+
+    security = models.ForeignKey(Security, on_delete=models.PROTECT, related_name="analysis_runs")
+    confirmed_peers = models.ManyToManyField(Company, related_name="analysis_runs_as_peer", blank=True)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.CREATED)
+    data_snapshot_ids = models.JSONField(default=dict)
+    assumptions = models.JSONField(default=dict)
+    score_configuration = models.JSONField(default=dict)
+    hard_rules = models.JSONField(default=list)
+    input_parameters = models.JSONField(default=dict)
+    output = models.JSONField(null=True, blank=True)
+    errors = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-requested_at", "-id"]
+
+    def transition_to(self, status: str) -> None:
+        allowed = {
+            self.Status.CREATED: {self.Status.QUEUED, self.Status.RUNNING, self.Status.FAILED},
+            self.Status.QUEUED: {self.Status.RUNNING, self.Status.FAILED},
+            self.Status.RUNNING: {self.Status.SUCCEEDED, self.Status.PARTIALLY_EVALUABLE, self.Status.FAILED},
+            self.Status.SUCCEEDED: set(),
+            self.Status.PARTIALLY_EVALUABLE: set(),
+            self.Status.FAILED: set(),
+        }
+        if status not in self.Status.values:
+            raise ValueError(f"unknown analysis-run status: {status}")
+        if status not in allowed[self.status]:
+            raise ValueError(f"cannot transition analysis run from {self.status} to {status}")
+        self.status = status
