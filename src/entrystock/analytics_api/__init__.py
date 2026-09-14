@@ -1,0 +1,1 @@
+"""FastAPI analytical boundary."""

@@ -1,24 +1,10 @@
-from typing import Literal
+"""Compatibility entrypoint for the analytical API.
 
-from fastapi import FastAPI
-from pydantic import BaseModel
+New deployments should use ``entrystock.analytics_api.main``. Keeping this
+module preserves the original ``api.main:app`` command while the package
+layout is migrated.
+"""
 
-from analytics import PACKAGE_VERSION
+from entrystock.analytics_api.main import HealthResponse, SERVICE_VERSION, app, health
 
-SERVICE_VERSION = PACKAGE_VERSION
-
-
-class HealthResponse(BaseModel):
-    status: Literal["ok"]
-
-
-app = FastAPI(
-    title="entrystock analytical service",
-    version=SERVICE_VERSION,
-    description="Typed HTTP boundary for reusable investor-analysis calculations.",
-)
-
-
-@app.get("/health", response_model=HealthResponse, tags=["system"])
-def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+__all__ = ["HealthResponse", "SERVICE_VERSION", "app", "health"]

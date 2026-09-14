@@ -57,3 +57,4 @@
 ## Documents
 
 - `_docs/process.md` - how work is organized
+- `_docs/entrystock_application_structure_guidelines.md` - how folders should be organised and instruction how they were reorginised from previous order: `_docs/map_entrypoint_structure_guidelines.md`

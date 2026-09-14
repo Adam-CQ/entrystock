@@ -21,6 +21,7 @@ dev = [
 testpaths = ["tests"]
 addopts = "-ra"
 DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = [".", "src"]
 
 [tool.entrystock.visualizations]
 plotly_js_version = "2.35.2"
@@ -30,4 +31,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["config", "api", "analytics", "companies"]
+packages = ["config", "api", "analytics", "companies", "financials", "market_data", "src/entrystock"]
