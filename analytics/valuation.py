@@ -6,7 +6,7 @@ to explain or audit a valuation; presentation code should not duplicate these
 formulas.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Sequence
 
@@ -153,3 +153,59 @@ def _finite(value: object) -> bool:
 DCFConfig = DCFInputs
 DCFValuation = DCFResult
 build_dcf = calculate_dcf
+
+
+@dataclass(frozen=True)
+class DCFSensitivityCell:
+    discount_rate: float
+    terminal_growth: float
+    per_share_value: float | None
+    status: str
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DCFSensitivityResult:
+    discount_rates: tuple[float, ...]
+    terminal_growths: tuple[float, ...]
+    cells: tuple[DCFSensitivityCell, ...]
+    base_case: tuple[float, float]
+    units: str
+    errors: tuple[str, ...] = ()
+
+    @property
+    def evaluable(self) -> bool:
+        return not self.errors and bool(self.cells)
+
+    def cell(self, discount_rate: float, terminal_growth: float) -> DCFSensitivityCell:
+        return next(item for item in self.cells if item.discount_rate == discount_rate and item.terminal_growth == terminal_growth)
+
+
+def calculate_dcf_sensitivity(
+    inputs: DCFInputs,
+    discount_rates: Sequence[float],
+    terminal_growths: Sequence[float],
+) -> DCFSensitivityResult:
+    """Evaluate the existing DCF engine over a labelled assumption grid."""
+
+    base = validate_dcf_inputs(inputs)
+    rows = tuple(float(value) for value in discount_rates)
+    columns = tuple(float(value) for value in terminal_growths)
+    if base:
+        return DCFSensitivityResult(rows, columns, (), (inputs.discount_rate, inputs.terminal_growth), "currency/share", ("insufficient DCF inputs: " + "; ".join(base),))
+    if not rows or not columns:
+        return DCFSensitivityResult(rows, columns, (), (inputs.discount_rate, inputs.terminal_growth), "currency/share", ("discount_rates and terminal_growths must not be empty",))
+    cells: list[DCFSensitivityCell] = []
+    for discount_rate in rows:
+        for terminal_growth in columns:
+            candidate = replace(inputs, discount_rate=discount_rate, terminal_growth=terminal_growth)
+            result = calculate_dcf(candidate)
+            if result.valid:
+                cells.append(DCFSensitivityCell(discount_rate, terminal_growth, result.per_share_value, "ok"))
+            else:
+                cells.append(DCFSensitivityCell(discount_rate, terminal_growth, None, "not_evaluable", result.errors))
+    return DCFSensitivityResult(rows, columns, tuple(cells), (inputs.discount_rate, inputs.terminal_growth), "currency/share")
+
+
+DCFScenarioGrid = DCFSensitivityResult
+build_dcf_sensitivity = calculate_dcf_sensitivity
