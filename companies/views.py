@@ -6,6 +6,24 @@ from analytics.fixture_provider import FixtureProvider
 from analytics.peer_analysis import propose_peers
 from companies.forms import PeerGroupForm
 from companies.models import Company, PeerGroupMember, PeerGroupProposal
+from analytics.dashboard import build_dashboard_context
+from market_data.models import PriceObservation
+
+
+def dashboard(request):
+    companies = Company.objects.filter(is_active=True).select_related("sector", "industry")
+    selected_id = request.GET.get("company")
+    company = get_object_or_404(companies, pk=selected_id) if selected_id else companies.first()
+    context = {"companies": companies, "selected_company": company}
+    if company:
+        proposal = _get_or_create_proposal(company)
+        peers = tuple(member.peer for member in proposal.members.filter(selected=True).select_related("peer"))
+        security = company.securities.first()
+        prices = tuple(PriceObservation.objects.filter(security=security).order_by("observed_at")) if security else ()
+        context.update(build_dashboard_context(company, proposal, peers, prices))
+        context["forecast_sources"] = ("management", "consensus", "internal")
+        context["dcf_assumptions"] = (("Forecast years", context["assumptions"].forecast_years), ("Revenue growth", "10%"), ("Operating margin", "8%"), ("Tax rate", "21%"), ("Reinvestment rate", "35%"), ("Discount rate", "10%"), ("Terminal growth", "3%"))
+    return render(request, "dashboard.html", context)
 
 
 def peer_group(request, company_id: int):
